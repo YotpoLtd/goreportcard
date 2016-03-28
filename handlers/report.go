@@ -26,5 +26,9 @@ func ReportHandler(w http.ResponseWriter, r *http.Request, repo string) {
 		return
 	}
 
-	t.Execute(w, map[string]interface{}{"repo": repo, "response": string(respBytes), "loading": needToLoad})
+	t.Execute(w, map[string]interface{}{
+		"repo":                 repo,
+		"response":             string(respBytes),
+		"loading":              needToLoad,
+	})
 }

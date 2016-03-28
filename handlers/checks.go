@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/gojp/goreportcard/check"
+	"github.com/YotpoLtd/goreportcard/check"
 )
 
 func dirName(repo string) string {
