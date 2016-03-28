@@ -49,10 +49,12 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		t := template.Must(template.New("home.html").Delims("[[", "]]").ParseFiles("templates/home.html"))
-		t.Execute(w, map[string]interface{}{"Recent": recentRepos})
+		t.Execute(w, map[string]interface{}{
+			"Recent":               recentRepos,
+		})
 
 		return
-	} else {
-		http.NotFound(w, r)
 	}
+
+	http.NotFound(w, r)
 }

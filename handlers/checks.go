@@ -14,6 +14,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/YotpoLtd/goreportcard/check"
+	"github.com/dustin/go-humanize"
 )
 
 func dirName(repo string) string {
@@ -51,6 +52,8 @@ func getFromCache(repo string) (checksResp, error) {
 	}
 
 	resp.LastRefresh = resp.LastRefresh.UTC()
+	resp.HumanizedLastRefresh = humanize.Time(resp.LastRefresh.UTC())
+
 	return resp, nil
 }
 
@@ -63,13 +66,14 @@ type score struct {
 }
 
 type checksResp struct {
-	Checks      []score   `json:"checks"`
-	Average     float64   `json:"average"`
-	Grade       Grade     `json:"grade"`
-	Files       int       `json:"files"`
-	Issues      int       `json:"issues"`
-	Repo        string    `json:"repo"`
-	LastRefresh time.Time `json:"last_refresh"`
+	Checks               []score   `json:"checks"`
+	Average              float64   `json:"average"`
+	Grade                Grade     `json:"grade"`
+	Files                int       `json:"files"`
+	Issues               int       `json:"issues"`
+	Repo                 string    `json:"repo"`
+	LastRefresh          time.Time `json:"last_refresh"`
+	HumanizedLastRefresh string    `json:"humanized_last_refresh"`
 }
 
 func goGet(repo string, firstAttempt bool) error {
@@ -152,6 +156,7 @@ func newChecksResp(repo string, forceRefresh bool) (checksResp, error) {
 		check.GoCyclo{Dir: dir, Filenames: filenames},
 		check.License{Dir: dir, Filenames: []string{}},
 		check.Misspell{Dir: dir, Filenames: filenames},
+		check.IneffAssign{Dir: dir, Filenames: filenames},
 	}
 
 	ch := make(chan score)
@@ -172,9 +177,13 @@ func newChecksResp(repo string, forceRefresh bool) (checksResp, error) {
 		}(c)
 	}
 
-	resp := checksResp{Repo: repo,
-		Files:       len(filenames),
-		LastRefresh: time.Now().UTC()}
+	resp := checksResp{
+		Repo:                 repo,
+		Files:                len(filenames),
+		LastRefresh:          time.Now().UTC(),
+		HumanizedLastRefresh: humanize.Time(time.Now().UTC()),
+	}
+
 	var total float64
 	var issues = make(map[string]bool)
 	for i := 0; i < len(checks); i++ {
