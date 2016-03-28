@@ -14,10 +14,7 @@ import (
 	"github.com/boltdb/bolt"
 )
 
-var (
-	addr = flag.String("http", ":8000", "HTTP listen address")
-	googleAnalyticsKey = flag.String("google_analytics_key", "UA-58936835-1", "Google Analytics Account Id")
-)
+var addr = flag.String("http", ":8000", "HTTP listen address")
 
 func makeHandler(name string, fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
