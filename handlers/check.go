@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/tools/go/vcs"
@@ -25,11 +26,23 @@ const (
 	MetaBucket string = "meta"
 )
 
+// trimScheme removes a scheme (e.g. https://) from the URL for more
+// convenient pasting from browsers.
+func trimScheme(repo string) string {
+	schemeSep := "://"
+	schemeSepIdx := strings.Index(repo, schemeSep)
+	if schemeSepIdx > -1 {
+		return repo[schemeSepIdx+len(schemeSep):]
+	}
+
+	return repo
+}
+
 // CheckHandler handles the request for checking a repo
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	repo := r.FormValue("repo")
+	repo := trimScheme(r.FormValue("repo"))
 
 	repoRoot, err := vcs.RepoRootForImportPath(repo, true)
 	if err != nil || repoRoot.Root == "" || repoRoot.Repo == "" {
@@ -67,16 +80,30 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 
 	// is this a new repo? if so, increase the count in the high scores bucket later
 	isNewRepo := false
+	var oldRepoBytes []byte
 	err = db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(RepoBucket))
 		if b == nil {
 			return fmt.Errorf("repo bucket not found")
 		}
-		isNewRepo = b.Get([]byte(repo)) == nil
+		oldRepoBytes = b.Get([]byte(repo))
 		return nil
 	})
 	if err != nil {
 		log.Println(err)
+	}
+
+	// get the old score and store it for stats updating
+	var oldScore *float64
+	if isNewRepo = oldRepoBytes == nil; !isNewRepo {
+		oldRepo := checksResp{}
+		err = json.Unmarshal(oldRepoBytes, &oldRepo)
+		if err != nil {
+			log.Println("ERROR: could not unmarshal json:", err)
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		oldScore = &oldRepo.Average
 	}
 
 	// if this is a new repo, or the user force-refreshed, update the cache
@@ -109,7 +136,12 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			return updateHighScores(mb, resp, repo)
+			err = updateHighScores(mb, resp, repo)
+			if err != nil {
+				return err
+			}
+
+			return updateStats(mb, resp, repo, oldScore)
 		})
 
 		if err != nil {
@@ -160,7 +192,7 @@ func updateHighScores(mb *bolt.Bucket, resp checksResp, repo string) error {
 	}
 	// if this repo is already in the list, remove the original entry:
 	for i := range *scores {
-		if (*scores)[i].Repo == repo {
+		if strings.ToLower((*scores)[i].Repo) == strings.ToLower(repo) {
 			heap.Remove(scores, i)
 			break
 		}
@@ -184,6 +216,31 @@ func updateHighScores(mb *bolt.Bucket, resp checksResp, repo string) error {
 		return err
 	}
 
+	return nil
+}
+
+func updateStats(mb *bolt.Bucket, resp checksResp, repo string, oldScore *float64) error {
+	scores := make([]int, 101, 101)
+	statsBytes := mb.Get([]byte("stats"))
+	if statsBytes == nil {
+		statsBytes, _ = json.Marshal(scores)
+	}
+	err := json.Unmarshal(statsBytes, &scores)
+	if err != nil {
+		return err
+	}
+	scores[int(resp.Average*100)]++
+	if oldScore != nil {
+		scores[int(*oldScore*100)]--
+	}
+	newStats, err := json.Marshal(scores)
+	if err != nil {
+		return err
+	}
+	err = mb.Put([]byte("stats"), newStats)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
